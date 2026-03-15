@@ -10,7 +10,7 @@ _Mission control for your AI agent fleet._
 
 </div>
 
-> `gclimon` — A portmanteau of _gCLI_ (the generative-AI CLI tools: Claude Code, gemini-cli) and _mon_ (monitor). When you have enough agents running in parallel that you've lost track of what any of them are doing, this is what you open.
+> `gclimon` — A portmanteau of _gCLI_ for Gemini CLI) and _mon_ (monitor). When you have enough agents running in parallel that you've lost track of what any of them are doing, this is what you open.
 
 A terminal dashboard that watches every Claude Code and gemini-cli session running in your tmux, and shows you — at a glance — who is thinking, who is waiting, who just ran a tool, and who needs your approval.
 
