@@ -1,0 +1,48 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "name": "Mission Control: Prompt",
+            "type": "command",
+            "command": "~/.gclimon/gclimon-hook prompt"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "name": "Mission Control: Tool Approval",
+            "type": "command",
+            "command": "~/.gclimon/gclimon-hook before_tool"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "name": "Mission Control: After Tool",
+            "type": "command",
+            "command": "~/.gclimon/gclimon-hook after_tool"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "name": "Mission Control: Done",
+            "type": "command",
+            "command": "~/.gclimon/gclimon-hook stop"
+          }
+        ]
+      }
+    ]
+  }
+}

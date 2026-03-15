@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+EVENT=$1
+INPUT=$(cat)
+
+echo "$(date): Hook called with event: $EVENT" >> "$LOG"
+
+# Extract window name and full pane path directly from tmux
+TMUX_INFO=$(tmux display-message -p -t "$TMUX_PANE" '#W|#{pane_current_path}')
+WINDOW="${TMUX_INFO%%|*}"
+PANE_PATH="${TMUX_INFO##*|}"
+
+# If the window has no name, use the directory basename as the window name
+if [ -z "$WINDOW" ]; then
+    WINDOW=$(basename "$PANE_PATH")
+fi
+
+case "$EVENT" in
+    "prompt")
+        PROMPT_TEXT=$(echo "$INPUT" | jq -r '.prompt // empty')
+        ~/.gclimon/gclimon update -w "$WINDOW" -p "$TMUX_PANE" -s "running" --prompt="$PROMPT_TEXT" >/dev/null 2>&1
+        ;;
+    "agent_response")
+        AGENT_TEXT=$(echo "$INPUT" | jq -r '.prompt_response // empty')
+        ~/.gclimon/gclimon update -w "$WINDOW" -p "$TMUX_PANE" -s "normal" -a "$AGENT_TEXT" >/dev/null 2>&1
+        ;;
+    "before_tool")
+        # Claude sends tool_name; Gemini ToolPermission notification may use tool or name
+        TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // .tool // .name // empty')
+        ~/.gclimon/gclimon update -w "$WINDOW" -p "$TMUX_PANE" -s "approval" -a "Wants to run: $TOOL_NAME" >/dev/null 2>&1
+        ;;
+    "after_tool")
+        TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
+        ~/.gclimon/gclimon update -w "$WINDOW" -p "$TMUX_PANE" -s "running" -a "Ran: $TOOL_NAME" >/dev/null 2>&1
+        ;;
+    "stop")
+        TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
+        AGENT_TEXT=""
+        if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
+            AGENT_TEXT=$(tail -50 "$TRANSCRIPT_PATH" | jq -sr '[.[] | select(.message.role == "assistant")] | last | .message.content | map(select(.type == "text") | .text) | join(" ")' 2>/dev/null | tr '\n' ' ' | head -c 200)
+        fi
+        ~/.gclimon/gclimon update -w "$WINDOW" -p "$TMUX_PANE" -s "normal" -a "$AGENT_TEXT" >/dev/null 2>&1
+        ;;
+esac
+
+echo "{}"
+exit 0

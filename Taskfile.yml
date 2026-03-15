@@ -1,0 +1,24 @@
+version: "3"
+
+vars:
+  BIN_DIR: ~/.gclimon
+  BIN: ~/.gclimon/gclimon
+  HOOK: ~/.gclimon/gclimon-hook
+
+tasks:
+  build:
+    desc: Build gclimon and install binary + hook script to ~/.gclimon/
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - go build -o {{.BIN}} .
+      - codesign -s - {{.BIN}} || true
+      - cp hooks/gclimon-hook {{.HOOK}}
+      - chmod +x {{.HOOK}}
+      - echo ""
+      - echo "Installed to {{.BIN_DIR}}"
+      - echo ""
+      - echo "Make sure {{.BIN_DIR}} is in your PATH, then configure hooks:"
+      - echo "  Claude Code  →  merge hooks/claude.json into ~/.claude/settings.local.json"
+      - echo "  gemini-cli   →  merge hooks/gemini.json into your Gemini settings"
+      - echo ""
+      - echo "See README.md for the full setup steps."

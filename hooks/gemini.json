@@ -1,0 +1,40 @@
+{
+  "hooks": {
+    "BeforeAgent": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "name": "Mission Control: Prompt",
+            "type": "command",
+            "command": "~/.gclimon/gclimon-hook prompt"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "ToolPermission",
+        "hooks": [
+          {
+            "name": "Mission Control: Tool Approval",
+            "type": "command",
+            "command": "~/.gclimon/gclimon-hook before_tool"
+          }
+        ]
+      }
+    ],
+    "AfterAgent": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "name": "Mission Control: Agent Response",
+            "type": "command",
+            "command": "~/.gclimon/gclimon-hook agent_response"
+          }
+        ]
+      }
+    ]
+  }
+}
