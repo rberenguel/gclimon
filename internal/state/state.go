@@ -1,4 +1,4 @@
-package main
+package state
 
 import (
 	"os/exec"
@@ -20,24 +20,25 @@ type PaneState struct {
 }
 
 var (
-	stateMu     sync.Mutex
-	state       = make(map[string]PaneState)
-	selectedIdx int32 // atomic, index of currently selected pane
+	Mu sync.Mutex
+	M  = make(map[string]PaneState)
+	Sel atomic.Int32
 
-	// editMode and editBuffer are protected by stateMu.
-	editMode   bool
-	editBuffer string
+	// EditMode and EditBuffer are protected by Mu.
+	EditMode   bool
+	EditBuffer string
 
-	// curLayout is set by drawUI and read by handleMouseEvent; protected by stateMu.
-	curLayout struct {
-		numCols  int
-		boxWidth int
+	// Layout is set by DrawUI and read by HandleMouseEvent; protected by Mu.
+	Layout struct {
+		NumCols  int
+		BoxWidth int
 	}
 )
 
-func getSortedPanes() []PaneState {
+// GetSorted returns panes sorted by pane ID. Caller must hold Mu if concurrent access is needed.
+func GetSorted() []PaneState {
 	var panes []PaneState
-	for _, p := range state {
+	for _, p := range M {
 		panes = append(panes, p)
 	}
 	sort.Slice(panes, func(i, j int) bool {
@@ -46,27 +47,27 @@ func getSortedPanes() []PaneState {
 	return panes
 }
 
-func removeSelectedPane() {
-	idx := int(atomic.LoadInt32(&selectedIdx))
-	stateMu.Lock()
-	panes := getSortedPanes()
+func RemoveSelected() {
+	idx := int(Sel.Load())
+	Mu.Lock()
+	panes := GetSorted()
 	if idx < len(panes) {
-		delete(state, panes[idx].Pane)
+		delete(M, panes[idx].Pane)
 	}
-	stateMu.Unlock()
+	Mu.Unlock()
 
-	stateMu.Lock()
-	remaining := len(state)
-	stateMu.Unlock()
+	Mu.Lock()
+	remaining := len(M)
+	Mu.Unlock()
 	if idx > 0 && idx >= remaining {
-		atomic.StoreInt32(&selectedIdx, int32(remaining-1))
+		Sel.Store(int32(remaining - 1))
 	}
 }
 
-func jumpToPaneIndex(idx int) {
-	stateMu.Lock()
-	panes := getSortedPanes()
-	stateMu.Unlock()
+func JumpTo(idx int) {
+	Mu.Lock()
+	panes := GetSorted()
+	Mu.Unlock()
 
 	if idx >= len(panes) {
 		return

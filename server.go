@@ -10,6 +10,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"gclimon/internal/state"
+	"gclimon/internal/tui"
 )
 
 func runServer() {
@@ -23,8 +26,8 @@ func runServer() {
 	defer listener.Close()
 	defer os.Remove(sockPath)
 
-	setTerminalMode(true)
-	defer setTerminalMode(false)
+	tui.SetTerminalMode(true)
+	defer tui.SetTerminalMode(false)
 
 	// Enable ANSI mouse tracking (SGR mode) and hide cursor.
 	fmt.Print("\033[?1000h\033[?1006h\033[?25l")
@@ -47,10 +50,10 @@ func runServer() {
 		}
 	}()
 
-	go handleInput()
+	go tui.HandleInput(cleanupAndExit)
 
 	for {
-		drawUI()
+		tui.DrawUI()
 		time.Sleep(200 * time.Millisecond)
 	}
 }
@@ -78,15 +81,15 @@ func handleConnection(conn net.Conn) {
 	defer conn.Close()
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
-		var update PaneState
+		var update state.PaneState
 		if err := json.Unmarshal(scanner.Bytes(), &update); err == nil {
-			stateMu.Lock()
+			state.Mu.Lock()
 			update.LastSeen = time.Now()
 			update.Prompt = sanitizeText(update.Prompt)
 			update.Agent = sanitizeText(update.Agent)
 
 			// Merge: preserve existing fields if not provided in update.
-			if existing, exists := state[update.Pane]; exists {
+			if existing, exists := state.M[update.Pane]; exists {
 				if update.Label == "" {
 					update.Label = existing.Label
 				}
@@ -98,9 +101,9 @@ func handleConnection(conn net.Conn) {
 				}
 			}
 
-			state[update.Pane] = update
-			stateMu.Unlock()
-			drawUI()
+			state.M[update.Pane] = update
+			state.Mu.Unlock()
+			tui.DrawUI()
 		}
 	}
 }

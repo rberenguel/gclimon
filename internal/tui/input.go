@@ -1,13 +1,14 @@
-package main
+package tui
 
 import (
 	"os"
 	"strconv"
 	"strings"
-	"sync/atomic"
+
+	"gclimon/internal/state"
 )
 
-func handleInput() {
+func HandleInput(cleanup func()) {
 	buf := make([]byte, 64)
 	for {
 		n, err := os.Stdin.Read(buf)
@@ -16,43 +17,43 @@ func handleInput() {
 		}
 
 		// --- Edit mode: capture label text ---
-		stateMu.Lock()
-		inEdit := editMode
-		stateMu.Unlock()
+		state.Mu.Lock()
+		inEdit := state.EditMode
+		state.Mu.Unlock()
 
 		if inEdit {
 			switch {
 			case n == 1 && buf[0] == 0x1b: // Esc — cancel
-				stateMu.Lock()
-				editMode = false
-				editBuffer = ""
-				stateMu.Unlock()
+				state.Mu.Lock()
+				state.EditMode = false
+				state.EditBuffer = ""
+				state.Mu.Unlock()
 
 			case n == 1 && (buf[0] == '\r' || buf[0] == '\n'): // Enter — confirm
-				sel := int(atomic.LoadInt32(&selectedIdx))
-				stateMu.Lock()
-				panes := getSortedPanes()
+				sel := int(state.Sel.Load())
+				state.Mu.Lock()
+				panes := state.GetSorted()
 				if sel < len(panes) {
-					p := state[panes[sel].Pane]
-					p.Label = editBuffer
-					state[panes[sel].Pane] = p
+					p := state.M[panes[sel].Pane]
+					p.Label = state.EditBuffer
+					state.M[panes[sel].Pane] = p
 				}
-				editMode = false
-				editBuffer = ""
-				stateMu.Unlock()
+				state.EditMode = false
+				state.EditBuffer = ""
+				state.Mu.Unlock()
 
 			case n == 1 && (buf[0] == 0x7f || buf[0] == 0x08): // Backspace
-				stateMu.Lock()
-				if len(editBuffer) > 0 {
-					runes := []rune(editBuffer)
-					editBuffer = string(runes[:len(runes)-1])
+				state.Mu.Lock()
+				if len(state.EditBuffer) > 0 {
+					runes := []rune(state.EditBuffer)
+					state.EditBuffer = string(runes[:len(runes)-1])
 				}
-				stateMu.Unlock()
+				state.Mu.Unlock()
 
 			case n == 1 && buf[0] >= 0x20 && buf[0] < 0x7f: // printable ASCII
-				stateMu.Lock()
-				editBuffer += string(buf[0])
-				stateMu.Unlock()
+				state.Mu.Lock()
+				state.EditBuffer += string(buf[0])
+				state.Mu.Unlock()
 			}
 			continue
 		}
@@ -61,86 +62,86 @@ func handleInput() {
 		input := string(buf[:n])
 
 		if input == "q" || input == "\x03" {
-			cleanupAndExit()
+			cleanup()
 		}
 
 		if n == 1 && buf[0] >= '1' && buf[0] <= '9' {
 			idx := int(buf[0] - '1')
-			atomic.StoreInt32(&selectedIdx, int32(idx))
-			jumpToPaneIndex(idx)
+			state.Sel.Store(int32(idx))
+			state.JumpTo(idx)
 			continue
 		}
 
 		if n == 1 && buf[0] == 'd' {
-			removeSelectedPane()
+			state.RemoveSelected()
 			continue
 		}
 
 		if n == 1 && buf[0] == 'r' {
-			sel := int(atomic.LoadInt32(&selectedIdx))
-			stateMu.Lock()
-			panes := getSortedPanes()
+			sel := int(state.Sel.Load())
+			state.Mu.Lock()
+			panes := state.GetSorted()
 			if sel < len(panes) {
-				editMode = true
-				editBuffer = panes[sel].Label
+				state.EditMode = true
+				state.EditBuffer = panes[sel].Label
 			}
-			stateMu.Unlock()
+			state.Mu.Unlock()
 			continue
 		}
 
 		if n == 1 && (buf[0] == '\r' || buf[0] == '\n') {
-			jumpToPaneIndex(int(atomic.LoadInt32(&selectedIdx)))
+			state.JumpTo(int(state.Sel.Load()))
 			continue
 		}
 
 		if n >= 3 && buf[0] == 0x1b && buf[1] == '[' {
 			switch buf[2] {
 			case 'A': // Up arrow — move up one grid row
-				stateMu.Lock()
-				cols := int32(curLayout.numCols)
-				stateMu.Unlock()
+				state.Mu.Lock()
+				cols := int32(state.Layout.NumCols)
+				state.Mu.Unlock()
 				if cols < 1 {
 					cols = 1
 				}
-				if cur := atomic.LoadInt32(&selectedIdx); cur >= cols {
-					atomic.StoreInt32(&selectedIdx, cur-cols)
+				if cur := state.Sel.Load(); cur >= cols {
+					state.Sel.Store(cur - cols)
 				}
 				continue
 			case 'B': // Down arrow — move down one grid row
-				stateMu.Lock()
-				cols := int32(curLayout.numCols)
-				count := int32(len(state))
-				stateMu.Unlock()
+				state.Mu.Lock()
+				cols := int32(state.Layout.NumCols)
+				count := int32(len(state.M))
+				state.Mu.Unlock()
 				if cols < 1 {
 					cols = 1
 				}
-				if cur := atomic.LoadInt32(&selectedIdx); cur+cols < count {
-					atomic.StoreInt32(&selectedIdx, cur+cols)
+				if cur := state.Sel.Load(); cur+cols < count {
+					state.Sel.Store(cur + cols)
 				}
 				continue
 			case 'C': // Right arrow — next pane
-				cur := atomic.LoadInt32(&selectedIdx)
-				stateMu.Lock()
-				count := int32(len(state))
-				stateMu.Unlock()
+				cur := state.Sel.Load()
+				state.Mu.Lock()
+				count := int32(len(state.M))
+				state.Mu.Unlock()
 				if cur < count-1 {
-					atomic.StoreInt32(&selectedIdx, cur+1)
+					state.Sel.Store(cur + 1)
 				}
 				continue
 			case 'D': // Left arrow — previous pane
-				if cur := atomic.LoadInt32(&selectedIdx); cur > 0 {
-					atomic.StoreInt32(&selectedIdx, cur-1)
+				if cur := state.Sel.Load(); cur > 0 {
+					state.Sel.Store(cur - 1)
 				}
 				continue
 			case '<': // SGR mouse event
-				handleMouseEvent(buf[:n])
+				HandleMouseEvent(buf[:n])
 				continue
 			}
 		}
 	}
 }
 
-func handleMouseEvent(data []byte) {
+func HandleMouseEvent(data []byte) {
 	s := string(data)
 	if !strings.HasPrefix(s, "\x1b[<") {
 		return
@@ -166,18 +167,18 @@ func handleMouseEvent(data []byte) {
 
 	// Scroll wheel
 	if button == 64 && press {
-		if cur := atomic.LoadInt32(&selectedIdx); cur > 0 {
-			atomic.StoreInt32(&selectedIdx, cur-1)
+		if cur := state.Sel.Load(); cur > 0 {
+			state.Sel.Store(cur - 1)
 		}
 		return
 	}
 	if button == 65 && press {
-		cur := atomic.LoadInt32(&selectedIdx)
-		stateMu.Lock()
-		count := int32(len(state))
-		stateMu.Unlock()
+		cur := state.Sel.Load()
+		state.Mu.Lock()
+		count := int32(len(state.M))
+		state.Mu.Unlock()
 		if cur < count-1 {
-			atomic.StoreInt32(&selectedIdx, cur+1)
+			state.Sel.Store(cur + 1)
 		}
 		return
 	}
@@ -186,20 +187,20 @@ func handleMouseEvent(data []byte) {
 	if button != 0 || !press {
 		return
 	}
-	if cy < firstBoxRow {
+	if cy < FirstBoxRow {
 		return
 	}
 
-	stateMu.Lock()
-	numCols := curLayout.numCols
-	boxWidth := curLayout.boxWidth
-	count := len(state)
-	stateMu.Unlock()
+	state.Mu.Lock()
+	numCols := state.Layout.NumCols
+	boxWidth := state.Layout.BoxWidth
+	count := len(state.M)
+	state.Mu.Unlock()
 
-	rowsPerBoxRow := linesPerBox + boxGap
-	offset := cy - firstBoxRow
+	rowsPerBoxRow := LinesPerBox + BoxGap
+	offset := cy - FirstBoxRow
 	gridRow := offset / rowsPerBoxRow
-	if offset%rowsPerBoxRow >= linesPerBox { // clicked on blank gap row
+	if offset%rowsPerBoxRow >= LinesPerBox { // clicked on blank gap row
 		return
 	}
 
@@ -216,6 +217,6 @@ func handleMouseEvent(data []byte) {
 		return
 	}
 
-	atomic.StoreInt32(&selectedIdx, int32(boxIdx))
-	jumpToPaneIndex(boxIdx)
+	state.Sel.Store(int32(boxIdx))
+	state.JumpTo(boxIdx)
 }

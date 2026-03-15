@@ -1,22 +1,23 @@
-package main
+package tui
 
 import (
 	"fmt"
 	"os/exec"
 	"runtime"
 	"strings"
-	"sync/atomic"
+
+	"gclimon/internal/state"
 )
 
 const (
 	minBoxWidth = 60 // minimum box width before reducing column count
 	colPad      = 1  // spaces between columns
-	linesPerBox = 6  // top border, usr×2, bot×2, bottom border
-	boxGap      = 1  // blank lines between box rows
-	firstBoxRow = 3  // 1-indexed terminal row where boxes begin (header + blank = 2)
+	LinesPerBox = 6  // top border, usr×2, bot×2, bottom border
+	BoxGap      = 1  // blank lines between box rows
+	FirstBoxRow = 3  // 1-indexed terminal row where boxes begin (header + blank = 2)
 )
 
-func setTerminalMode(raw bool) {
+func SetTerminalMode(raw bool) {
 	sttyFlag := "-F"
 	if runtime.GOOS == "darwin" {
 		sttyFlag = "-f"
@@ -30,7 +31,7 @@ func setTerminalMode(raw bool) {
 	exec.Command("stty", args...).Run()
 }
 
-func getTermWidth() int {
+func GetTermWidth() int {
 	sttyFlag := "-F"
 	if runtime.GOOS == "darwin" {
 		sttyFlag = "-f"
@@ -75,7 +76,7 @@ func splitContent(s string, width int) (string, string) {
 }
 
 // buildBoxLines renders a single pane box as 6 fixed-width strings (no newlines).
-func buildBoxLines(p PaneState, idx, sel, boxWidth, contentWidth int) [linesPerBox]string {
+func buildBoxLines(p state.PaneState, idx, sel, boxWidth, contentWidth int) [LinesPerBox]string {
 	color := "\033[33m" // yellow — waiting
 	switch p.Status {
 	case "approval":
@@ -106,7 +107,7 @@ func buildBoxLines(p PaneState, idx, sel, boxWidth, contentWidth int) [linesPerB
 	agent1, agent2 := splitContent(p.Agent, contentWidth)
 
 	// Each content line: "│ " (2) + label (5) + content (contentWidth) + " │" (2) = boxWidth
-	var lines [linesPerBox]string
+	var lines [LinesPerBox]string
 	lines[0] = fmt.Sprintf("%s%s%s┐\033[0m", color, topPrefix, strings.Repeat("─", topDashes))
 	lines[1] = fmt.Sprintf("│ \033[0m\033[1mUsr:\033[0m %s %s│\033[0m", padRight(prompt1, contentWidth), color)
 	lines[2] = fmt.Sprintf("│ \033[0m     %s %s│\033[0m", padRight(prompt2, contentWidth), color)
@@ -116,13 +117,13 @@ func buildBoxLines(p PaneState, idx, sel, boxWidth, contentWidth int) [linesPerB
 	return lines
 }
 
-func drawUI() {
-	stateMu.Lock()
-	defer stateMu.Unlock()
+func DrawUI() {
+	state.Mu.Lock()
+	defer state.Mu.Unlock()
 
-	sel := int(atomic.LoadInt32(&selectedIdx))
-	inEdit := editMode
-	buf := editBuffer
+	sel := int(state.Sel.Load())
+	inEdit := state.EditMode
+	buf := state.EditBuffer
 
 	var sb strings.Builder
 	sb.WriteString("\033[2J\033[H")
@@ -135,7 +136,7 @@ func drawUI() {
 		sb.WriteString("\033[2mgclimon   q=quit  ←→=select  ↑↓=row  1-9=jump  ↵=focus  d=remove  r=rename\033[0m\n\n")
 	}
 
-	panes := getSortedPanes()
+	panes := state.GetSorted()
 
 	if len(panes) == 0 {
 		sb.WriteString("Waiting for agent activity...\n")
@@ -146,10 +147,10 @@ func drawUI() {
 	// Clamp selection to valid range.
 	if sel >= len(panes) {
 		sel = len(panes) - 1
-		atomic.StoreInt32(&selectedIdx, int32(sel))
+		state.Sel.Store(int32(sel))
 	}
 
-	termWidth := getTermWidth()
+	termWidth := GetTermWidth()
 	numCols := (termWidth + colPad) / (minBoxWidth + colPad)
 	if numCols < 1 {
 		numCols = 1
@@ -158,8 +159,8 @@ func drawUI() {
 	contentWidth := boxWidth - 9 // "│ Usr: "(7) + " │"(2)
 
 	// Publish layout for mouse click mapping.
-	curLayout.numCols = numCols
-	curLayout.boxWidth = boxWidth
+	state.Layout.NumCols = numCols
+	state.Layout.BoxWidth = boxWidth
 
 	for rowStart := 0; rowStart < len(panes); rowStart += numCols {
 		rowEnd := rowStart + numCols
@@ -169,13 +170,13 @@ func drawUI() {
 		rowPanes := panes[rowStart:rowEnd]
 
 		// Build all box lines for this row.
-		rowLines := make([][linesPerBox]string, len(rowPanes))
+		rowLines := make([][LinesPerBox]string, len(rowPanes))
 		for j, p := range rowPanes {
 			rowLines[j] = buildBoxLines(p, rowStart+j, sel, boxWidth, contentWidth)
 		}
 
 		// Print each horizontal line of the row.
-		for line := 0; line < linesPerBox; line++ {
+		for line := 0; line < LinesPerBox; line++ {
 			for j, lines := range rowLines {
 				if j > 0 {
 					sb.WriteString(strings.Repeat(" ", colPad))

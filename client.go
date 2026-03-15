@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"os"
+
+	"gclimon/internal/state"
 )
 
 // runClient sends a state update to the running TUI server over the Unix socket.
@@ -26,7 +28,7 @@ func runClient() {
 		os.Exit(1)
 	}
 
-	payload := PaneState{
+	payload := state.PaneState{
 		Window: *window,
 		Pane:   *pane,
 		Status: *status,
